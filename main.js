@@ -353,9 +353,6 @@ class RotateNorthControl extends Control {
 let osm2_ = true;
 
 class RotateNorthControl1 extends Control {
-  /**
-   * @param {Object} [opt_options] Control options.
-   */
   constructor(opt_options) {
     const options = opt_options || {};
 
@@ -405,6 +402,61 @@ class RotateNorthControl1 extends Control {
     }
   }
 }
+var timeout = null;
+class RotateNorthControl2 extends Control {
+  constructor(opt_options) {
+    const options = opt_options || {};
+
+    const input = document.createElement("input");
+
+    const element = document.createElement("div");
+    element.className = "rotate-north2 ol-unselectable ol-control";
+    element.appendChild(input);
+
+    super({
+      element: element,
+      target: options.target,
+    });
+
+    input.addEventListener("input", this.updateValue, false);
+  }
+
+  updateValue(e) {
+    if (timeout !== null) {
+      clearTimeout(timeout);
+    }
+    timeout = setTimeout(async function() {
+      if (e.target.value != "") {
+        const s = await fetch(
+          "https://api.yakutianoracle.ru/api/v1/user/geo?search=" +
+          e.target.value,
+          {
+            method: "GET",
+            headers: {
+              Authorization: "Bearer " + token,
+            },
+          },
+        )
+          .then((d) => d.json())
+          .then((r) => r);
+        view.animate({
+          zoom: view.getZoom() + 20 / view.getZoom(),
+          center: transform(
+            [
+              s["features"][0]["geometry"]["coordinates"][1],
+              s["features"][0]["geometry"]["coordinates"][0],
+            ],
+            "EPSG:4326",
+            "EPSG:3857",
+          ),
+          duration: 500,
+        });
+        console.log(s);
+      }
+    }, 1000);
+  }
+}
+
 const map = new Map({
   target: "map",
   layers: [osm, regionLayer, geoLayer, citiesLayer],
@@ -413,6 +465,7 @@ const map = new Map({
   controls: defaultControls().extend([
     new RotateNorthControl(),
     new RotateNorthControl1(),
+    new RotateNorthControl2(),
   ]),
 });
 
