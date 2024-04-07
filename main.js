@@ -101,6 +101,7 @@ const citiesVS = new VectorSource({
             "EPSG:3857",
           );
         });
+        console.log(k);
         const features = new GeoJSON().readFeatures(k);
         citiesVS.addFeatures(features);
         success(features);
@@ -309,15 +310,30 @@ map.on("click", function(event) {
 
   const prop = feature.get("features")[0].getProperties();
 
-  content.innerHTML = `<div style="display: flex; flex-direction: column"><p>Город: ${prop["name"]
-    }</p><span>Координаты: 
-    (${Math.round(wsg84[0] * 100000) / 100000}, 
-    ${Math.round(wsg84[1] * 100000) / 100000}) 
-    </span><span>Транспортная доступность: ${Math.round(
+  const places = {
+    city: "Город",
+    town: "Поселок городского типа",
+    village: "Деревня",
+    hamlet: "Село",
+  };
+
+  content.innerHTML = `<div style="display: flex; flex-direction: column"><p>${places[prop["place"]]
+    }: ${prop["name"]}</p>
+    <span>Население: ${prop["population"]}</span>
+<span>Потенциал: ${prop["rating"]}</span>
+<span>Коэффициент Круглогодичности: ${prop["year_round_rating"]}</span>
+<span>Транспортная доступность: ${Math.round(
       prop["transport"]["rating"] * 10,
     )}%</span><span>Рядом ли аэропорт: ${prop["transport"]["airport_nearby"] ? "Да" : "Нет"
     }</span><span>Количество автобусных остановок: ${prop["transport"]["bus_stations"]
-    }</span></div>`;
+    }</span>
+
+    <span>Координаты: 
+    (${Math.round(wsg84[0] * 100000) / 100000}, 
+    ${Math.round(wsg84[1] * 100000) / 100000}) 
+    </span>
+
+</div>`;
   overlay.setPosition(coordinate);
 });
 
