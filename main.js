@@ -9,8 +9,56 @@ import { transform } from "ol/proj";
 import { Cluster } from "ol/source";
 import { Circle as CircleStyle, Fill, Stroke, Style, Text } from "ol/style.js";
 
+let params = new URL(document.location.toString()).searchParams;
+let token = params.get("token");
+
+// token = "1|MjTz0soHazrXzLkwwHlzUBSOuA3CgacDgLU0aNp856ec2ecb";
+
+function pickHex(color1, color2, weight) {
+  var w1 = weight;
+  var w2 = 1 - w1;
+  var rgb = [
+    Math.round(color1[0] * w1 + color2[0] * w2),
+    Math.round(color1[1] * w1 + color2[1] * w2),
+    Math.round(color1[2] * w1 + color2[2] * w2),
+  ];
+  return rgb;
+}
+
 const osm = new TileLayer({
   source: new OSM(),
+});
+
+const regionVS = new VectorSource({
+  url: "https://api.yakutianoracle.ru/api/v1/territory",
+  format: new GeoJSON(),
+  // loader: async function(extent, r, x, success, failure) {
+  //   const url = "https://api.yakutianoracle.ru/api/v1/user/geo/regions";
+  //   const xhr = new XMLHttpRequest();
+  //   xhr.open("GET", url);
+  //   xhr.setRequestHeader("Authorization", "Bearer " + token);
+  //   const onError = function() {
+  //     citiesVS.removeLoadedExtent(extent);
+  //     failure();
+  //   };
+  //   xhr.onerror = onError;
+  //   xhr.onload = function() {
+  //     if (xhr.status == 200) {
+  //       const k = JSON.parse(xhr.responseText);
+  //       console.log(k);
+  //       const features = new GeoJSON().readFeatures(k);
+  //       citiesVS.addFeatures(features);
+  //       success(features);
+  //     } else {
+  //       onError();
+  //     }
+  //   };
+  //   xhr.send();
+  // },
+});
+
+const regionLayer = new VectorLayer({
+  source: regionVS,
 });
 
 const citiesVS = new VectorSource({
@@ -18,10 +66,7 @@ const citiesVS = new VectorSource({
     const url = "https://api.yakutianoracle.ru/api/v1/user/geo/cities";
     const xhr = new XMLHttpRequest();
     xhr.open("GET", url);
-    xhr.setRequestHeader(
-      "Authorization",
-      "Bearer 1|ltN6mUXK1LE080xvAqytarfUiA76M5bpJuVAEbA375eb2988",
-    );
+    xhr.setRequestHeader("Authorization", "Bearer " + token);
     const onError = function() {
       citiesVS.removeLoadedExtent(extent);
       failure();
@@ -52,8 +97,8 @@ const citiesVS = new VectorSource({
 });
 
 const citiesCluster = new Cluster({
-  distance: 50,
-  minDistance: 50,
+  distance: 30,
+  minDistance: 30,
   source: citiesVS,
 });
 
@@ -70,7 +115,13 @@ const citiesLayer = new VectorLayer({
             color: "#fff",
           }),
           fill: new Fill({
-            color: "#3399CC",
+            color: pickHex(
+              [0, 255, 0],
+              [255, 0, 0],
+              feature.get("features")[0].getProperties()["transport"][
+              "rating"
+              ] / 10,
+            ),
           }),
         }),
         text: new Text({
@@ -86,6 +137,14 @@ const citiesLayer = new VectorLayer({
     }
     let style = styleCache[size];
     if (!style) {
+      let sum = 0;
+      for (let i = 0; i < size; i++) {
+        sum =
+          sum +
+          feature.get("features")[i].getProperties()["transport"]["rating"];
+      }
+      console.log(sum, size, sum / size);
+      sum /= size;
       style = new Style({
         image: new CircleStyle({
           radius: 10,
@@ -93,7 +152,7 @@ const citiesLayer = new VectorLayer({
             color: "#fff",
           }),
           fill: new Fill({
-            color: "#3399CC",
+            color: pickHex([0, 255, 0], [255, 0, 0], sum / 10),
           }),
         }),
         text: new Text({
@@ -138,34 +197,10 @@ const view = new View({
 
 const map = new Map({
   target: "map",
-  layers: [osm, citiesLayer],
+  layers: [osm, regionLayer, citiesLayer],
   overlays: [overlay],
   view: view,
 });
-
-// const element = document.getElementById("popup");
-//
-// const popup = new Overlay({
-//   element: element,
-//   stopEvent: false,
-// });
-// map.addOverlay(popup);
-
-// function formatCoordinate(coordinate) {
-//   return `
-//     <table>
-//       <tbody>
-//         <tr><th>lon</th><td>${coordinate[0].toFixed(2)}</td></tr>
-//         <tr><th>lat</th><td>${coordinate[1].toFixed(2)}</td></tr>
-//       </tbody>
-//     </table>`;
-// }
-
-// map.on("moveend", function() {
-//   const view = map.getView();
-//   const center = view.getCenter();
-//   info.innerHTML = formatCoordinate(center);
-// });
 
 map.on("click", function(event) {
   const feature = map.getFeaturesAtPixel(event.pixel)[0];
@@ -183,11 +218,19 @@ map.on("click", function(event) {
   }
 
   const coordinate = feature.getGeometry().getCoordinates();
+  const wsg84 = transform(coordinate, "EPSG:3857", "EPSG:4326");
 
-  content.innerHTML = `<p>Город: ${feature.get("features")[0].getProperties()["name"]
-    }</p><code>
-    ${transform(coordinate, "EPSG:3857", "EPSG:4326")} 
-    </code>`;
+  const prop = feature.get("features")[0].getProperties();
+
+  content.innerHTML = `<div style="display: flex; flex-direction: column"><p>Город: ${prop["name"]
+    }</p><span>Координаты: 
+    (${Math.round(wsg84[0] * 100000) / 100000}, 
+    ${Math.round(wsg84[1] * 100000) / 100000}) 
+    </span><span>Транспортная доступность: ${Math.round(
+      prop["transport"]["rating"] * 10,
+    )}%</span><span>Рядом ли аэропорт: ${prop["transport"]["airport_nearby"] ? "Да" : "Нет"
+    }</span><span>Количество автобусных остановок: ${prop["transport"]["bus_stations"]
+    }</span></div>`;
   overlay.setPosition(coordinate);
 });
 

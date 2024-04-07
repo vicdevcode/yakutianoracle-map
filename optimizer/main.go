@@ -169,21 +169,18 @@ func getRatingRoads() {
 				}
 			}
 		}
-		if count > 100 {
-			count = 100
+		if count > 50 {
+			count = 50
 		}
 		rn := false
-		if ccc > 5 {
+		if ccc > 0 {
 			ccc = 5
 			rn = true
 		} else {
-			if ccc > 0 {
-				rn = true
-			}
 			ccc = 4
 		}
 
-		rating := (count / 100) * ccc
+		rating := (count / 50) * ccc
 
 		mu.Lock()
 		result = append(result, Result{
@@ -314,7 +311,7 @@ func getBuses() {
 		result = append(result, ResultBus{
 			City:        city.Name,
 			BusStations: len(buss),
-			Rating:      (c / 10) * 5,
+			Rating:      ((c / 10) * 2) + 3,
 		})
 	}
 
@@ -539,8 +536,8 @@ func getResult() {
 }
 
 func main() {
-	// getRatingRoads()
-	// getBuses()
-	// getAirports()
+	getRatingRoads()
+	getBuses()
+	getAirports()
 	getResult()
 }
