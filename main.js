@@ -8,6 +8,11 @@ import GeoJSON from "ol/format/GeoJSON";
 import { transform } from "ol/proj";
 import { Cluster } from "ol/source";
 import { Circle as CircleStyle, Fill, Stroke, Style, Text } from "ol/style.js";
+import Geolocation from "ol/Geolocation";
+import Feature from "ol/Feature.js";
+import Point from "ol/geom/Point.js";
+import XYZ from "ol/source/XYZ.js";
+import { Control, defaults as defaultControls } from "ol/control.js";
 
 let params = new URL(document.location.toString()).searchParams;
 let token = params.get("token");
@@ -27,6 +32,17 @@ function pickHex(color1, color2, weight) {
 
 const osm = new TileLayer({
   source: new OSM(),
+  // source: new XYZ({
+  //   url: "https://api.maptiler.com/tiles/satellite/{z}/{x}/{y}.jpg?key=mnrOol1RFL0nHjcUVNjM",
+  //   maxZoom: 20,
+  // }),
+});
+
+const noosm = new TileLayer({
+  source: new XYZ({
+    url: "https://api.maptiler.com/tiles/satellite/{z}/{x}/{y}.jpg?key=mnrOol1RFL0nHjcUVNjM",
+    maxZoom: 20,
+  }),
 });
 
 const regionVS = new VectorSource({
@@ -195,11 +211,82 @@ const view = new View({
   extent: [11013447.6518, 7085566.549, 18614341.9101, 14052497.1404],
 });
 
+const geolocation = new Geolocation({
+  trackingOptions: {
+    enableHighAccuracy: true,
+  },
+  projection: view.getProjection(),
+});
+geolocation.setTracking(true);
+
+const positionFeature = new Feature();
+positionFeature.setStyle(
+  new Style({
+    image: new CircleStyle({
+      radius: 6,
+      fill: new Fill({
+        color: "#3399CC",
+      }),
+      stroke: new Stroke({
+        color: "#fff",
+        width: 2,
+      }),
+    }),
+  }),
+);
+geolocation.on("change:position", function() {
+  const coordinates = geolocation.getPosition();
+  positionFeature.setGeometry(coordinates ? new Point(coordinates) : null);
+});
+
+const geoLayer = new VectorLayer({
+  source: new VectorSource({
+    features: [positionFeature],
+  }),
+});
+
+let osm_ = true;
+
+class RotateNorthControl extends Control {
+  /**
+   * @param {Object} [opt_options] Control options.
+   */
+  constructor(opt_options) {
+    const options = opt_options || {};
+
+    const button = document.createElement("button");
+    button.innerHTML = "N";
+
+    const element = document.createElement("div");
+    element.className = "rotate-north ol-unselectable ol-control";
+    element.appendChild(button);
+
+    super({
+      element: element,
+      target: options.target,
+    });
+
+    button.addEventListener("click", this.handleRotateNorth.bind(this), false);
+  }
+
+  handleRotateNorth() {
+    console.log(osm_);
+    if (osm_) {
+      this.getMap().setLayers([noosm, regionLayer, geoLayer, citiesLayer]);
+      osm_ = false;
+    } else {
+      this.getMap().setLayers([osm, regionLayer, geoLayer, citiesLayer]);
+      osm_ = true;
+    }
+  }
+}
+
 const map = new Map({
   target: "map",
-  layers: [osm, regionLayer, citiesLayer],
+  layers: [osm, regionLayer, geoLayer, citiesLayer],
   overlays: [overlay],
   view: view,
+  controls: defaultControls().extend([new RotateNorthControl()]),
 });
 
 map.on("click", function(event) {
