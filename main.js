@@ -77,6 +77,42 @@ const regionLayer = new VectorLayer({
   source: regionVS,
 });
 
+const geoVS = new VectorSource({
+  loader: async function(extent, r, x, success, failure) {
+    const url = "https://api.yakutianoracle.ru/api/v1/user/geo";
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", url);
+    xhr.setRequestHeader("Authorization", "Bearer " + token);
+    const onError = function() {
+      geoVS.removeLoadedExtent(extent);
+      failure();
+    };
+    xhr.onerror = onError;
+    xhr.onload = function() {
+      if (xhr.status == 200) {
+        const k = JSON.parse(xhr.responseText);
+        k["features"].forEach((element) => {
+          element["geometry"]["coordinates"] = transform(
+            [
+              element["geometry"]["coordinates"][1],
+              element["geometry"]["coordinates"][0],
+            ],
+            "EPSG:4326",
+            "EPSG:3857",
+          );
+        });
+        console.log(k);
+        const features = new GeoJSON().readFeatures(k);
+        geoVS.addFeatures(features);
+        success(features);
+      } else {
+        onError();
+      }
+    };
+    xhr.send();
+  },
+});
+
 const citiesVS = new VectorSource({
   loader: async function(extent, r, x, success, failure) {
     const url = "https://api.yakutianoracle.ru/api/v1/user/geo/cities";
@@ -113,76 +149,108 @@ const citiesVS = new VectorSource({
   },
 });
 
+const geoCluster = new Cluster({
+  distance: 15,
+  minDistance: 15,
+  source: geoVS,
+});
+
 const citiesCluster = new Cluster({
   distance: 30,
   minDistance: 30,
   source: citiesVS,
 });
 
+const geosLayer = new VectorLayer({
+  source: geoCluster,
+  style: function(feature) {
+    return new Style({
+      image: new CircleStyle({
+        radius: 5,
+        stroke: new Stroke({
+          color: "#fff",
+        }),
+        fill: new Fill({
+          color: pickHex([0, 255, 255], [255, 0, 0], 0.5),
+        }),
+      }),
+      text: new Text({
+        text: feature.get("features")[0].getProperties()["category"],
+        font: "7px sans-serif",
+        textBaseline: "top",
+        offsetY: 10,
+        fill: new Fill({
+          color: "#222",
+        }),
+      }),
+    });
+  },
+});
+
+const styles = function(feature) {
+  const size = feature.get("features").length;
+  if (size == 1) {
+    return new Style({
+      image: new CircleStyle({
+        radius: 10,
+        stroke: new Stroke({
+          color: "#fff",
+        }),
+        fill: new Fill({
+          color: pickHex(
+            [0, 255, 0],
+            [255, 0, 0],
+            feature.get("features")[0].getProperties()["transport"]["rating"] /
+            10,
+          ),
+        }),
+      }),
+      text: new Text({
+        text: feature.get("features")[0].getProperties()["name"],
+        font: "9px sans-serif",
+        textBaseline: "top",
+        offsetY: 10,
+        fill: new Fill({
+          color: "#222",
+        }),
+      }),
+    });
+  }
+  let style = styleCache[size];
+  if (!style) {
+    let sum = 0;
+    for (let i = 0; i < size; i++) {
+      sum =
+        sum + feature.get("features")[i].getProperties()["transport"]["rating"];
+    }
+    console.log(sum, size, sum / size);
+    sum /= size;
+    style = new Style({
+      image: new CircleStyle({
+        radius: 10,
+        stroke: new Stroke({
+          color: "#fff",
+        }),
+        fill: new Fill({
+          color: pickHex([0, 255, 0], [255, 0, 0], sum / 10),
+        }),
+      }),
+      text: new Text({
+        text: size.toString(),
+        fill: new Fill({
+          color: "#fff",
+        }),
+      }),
+    });
+    styleCache[size] = style;
+  }
+  return style;
+};
+
 const styleCache = {};
 const citiesLayer = new VectorLayer({
   source: citiesCluster,
-  style: function(feature) {
-    const size = feature.get("features").length;
-    if (size == 1) {
-      return new Style({
-        image: new CircleStyle({
-          radius: 10,
-          stroke: new Stroke({
-            color: "#fff",
-          }),
-          fill: new Fill({
-            color: pickHex(
-              [0, 255, 0],
-              [255, 0, 0],
-              feature.get("features")[0].getProperties()["transport"][
-              "rating"
-              ] / 10,
-            ),
-          }),
-        }),
-        text: new Text({
-          text: feature.get("features")[0].getProperties()["name"],
-          font: "9px sans-serif",
-          textBaseline: "top",
-          offsetY: 10,
-          fill: new Fill({
-            color: "#222",
-          }),
-        }),
-      });
-    }
-    let style = styleCache[size];
-    if (!style) {
-      let sum = 0;
-      for (let i = 0; i < size; i++) {
-        sum =
-          sum +
-          feature.get("features")[i].getProperties()["transport"]["rating"];
-      }
-      console.log(sum, size, sum / size);
-      sum /= size;
-      style = new Style({
-        image: new CircleStyle({
-          radius: 10,
-          stroke: new Stroke({
-            color: "#fff",
-          }),
-          fill: new Fill({
-            color: pickHex([0, 255, 0], [255, 0, 0], sum / 10),
-          }),
-        }),
-        text: new Text({
-          text: size.toString(),
-          fill: new Fill({
-            color: "#fff",
-          }),
-        }),
-      });
-      styleCache[size] = style;
-    }
-    return style;
-  },
+  style: styles,
 });
 
 let zoom = 5;
@@ -282,12 +350,70 @@ class RotateNorthControl extends Control {
   }
 }
 
+let osm2_ = true;
+
+class RotateNorthControl1 extends Control {
+  /**
+   * @param {Object} [opt_options] Control options.
+   */
+  constructor(opt_options) {
+    const options = opt_options || {};
+
+    const button = document.createElement("button");
+    button.innerHTML = "P";
+
+    const element = document.createElement("div");
+    element.className = "rotate-north1 ol-unselectable ol-control";
+    element.appendChild(button);
+
+    super({
+      element: element,
+      target: options.target,
+    });
+
+    button.addEventListener("click", this.handleRotateNorth.bind(this), false);
+  }
+
+  handleRotateNorth() {
+    console.log(osm2_);
+    if (osm2_) {
+      if (osm_) {
+        this.getMap().setLayers([
+          osm,
+          regionLayer,
+          geoLayer,
+          citiesLayer,
+          geosLayer,
+        ]);
+      } else {
+        this.getMap().setLayers([
+          noosm,
+          regionLayer,
+          geoLayer,
+          citiesLayer,
+          geosLayer,
+        ]);
+      }
+      osm2_ = false;
+    } else {
+      if (osm_) {
+        this.getMap().setLayers([osm, regionLayer, geoLayer, citiesLayer]);
+      } else {
+        this.getMap().setLayers([noosm, regionLayer, geoLayer, citiesLayer]);
+      }
+      osm2_ = true;
+    }
+  }
+}
 const map = new Map({
   target: "map",
   layers: [osm, regionLayer, geoLayer, citiesLayer],
   overlays: [overlay],
   view: view,
-  controls: defaultControls().extend([new RotateNorthControl()]),
+  controls: defaultControls().extend([
+    new RotateNorthControl(),
+    new RotateNorthControl1(),
+  ]),
 });
 
 map.on("click", function(event) {
